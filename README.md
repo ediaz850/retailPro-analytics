@@ -108,12 +108,12 @@ retailpro-analytics/
 │       └── insert_tiendas.sql        # INSERT de las 5 tiendas
 │
 ├── python/
-│   ├── 00_config.py                  # Configuración central y conexión
-│   ├── 01_generate_dim_tiempo.py     # Calendario 2025-2026
-│   ├── 02_generate_dim_catalogo.py   # Categorías, artículos, empleados, clientes
-│   ├── 03_generate_fact_ventas.py    # Ventas históricas consolidadas
-│   ├── 04_generate_fact_inventario.py# Snapshots diarios de inventario
-│   └── 05_daily_loader.py            # Cargador diario automático + reporte email
+│   ├── config.py                  # Configuración central y conexión
+│   ├── dimtiempo.py     # Calendario 2025-2026
+│   ├── dimcatalogo.py   # Categorías, artículos, empleados, clientes
+│   ├── factsventas.py    # Ventas históricas consolidadas
+│   ├── factsinventario.py# Snapshots diarios de inventario
+│   └── dailyloader.py            # Cargador diario automático + reporte email
 │
 ├── geojson/
 │   ├── panama_provincias.json        # TopoJSON provincias de Panamá
@@ -147,7 +147,7 @@ pip install pyodbc pandas faker
 # Ejecutar en SSMS: sql/inserts/insert_tiendas.sql
 
 # 2. Configurar conexión
-# Editar python/00_config.py → ajustar SERVER si es necesario
+# Editar python/config.py → ajustar SERVER si es necesario
 
 # 3. Cargar datos históricos (ejecutar en orden)
 python dimtiempo.py
