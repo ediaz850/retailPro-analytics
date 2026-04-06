@@ -150,10 +150,10 @@ pip install pyodbc pandas faker
 # Editar python/00_config.py → ajustar SERVER si es necesario
 
 # 3. Cargar datos históricos (ejecutar en orden)
-python 01_generate_dim_tiempo.py
-python 02_generate_dim_catalogo.py
-python 03_generate_fact_ventas.py       # ~3-5 minutos
-python 04_generate_fact_inventario.py  # ~5-8 minutos
+python dimtiempo.py
+python dimcatalogo.py
+python factsventas.py       # ~3-5 minutos
+python factsinventario.py  # ~5-8 minutos
 
 # 4. Carga diaria (ejecutar cada día)
 python 05_daily_loader.py
