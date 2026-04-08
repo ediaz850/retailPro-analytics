@@ -5,20 +5,23 @@
 #  Autor: Ezequiel Díaz | GitHub: ediaz850
 #
 #  CÓMO USAR:
-#  - Manual:    python 05_daily_loader.py
+#  - Manual:    python dailyloader.py
 #  - Automático: Programador de tareas de Windows, cada día 11:00 PM
 #
 #  REQUISITOS:
-#  - Haber ejecutado 01 → 04 primero (carga histórica)
-#  - Configurar EMAIL_ORIGEN y EMAIL_DESTINO abajo
+#  - Haber ejecutado dimtiempo → dimcatalogo → factsventas → factsinventario
+#  - Crear archivo .env en la carpeta python/ con tus credenciales
+#    (copiar .env.example como .env y llenar los valores)
 # ============================================================
 
+import os
 import random
 import smtplib
 import pandas as pd
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
 from config import (
     get_connection,
     FERIADOS_PANAMA, TEMPORADAS,
@@ -29,20 +32,21 @@ from config import (
 )
 
 # ============================================================
-#  CONFIGURACIÓN DE EMAIL
-#  Cambia estos valores por los tuyos
-#  Usa una contraseña de aplicación de Gmail (no tu contraseña normal)
-#  Gmail: Cuenta → Seguridad → Verificación en 2 pasos → Contraseñas de app
+#  CARGAR CREDENCIALES DESDE .env
+#  El archivo .env nunca se sube a GitHub
 # ============================================================
 
-EMAIL_ORIGEN  = "tu_correo@gmail.com"       # cambia esto
-EMAIL_DESTINO = "ezequiel.diazperez@outlook.com"
-EMAIL_PASSWORD = "tu_contraseña_de_app"     # contraseña de app Gmail
+load_dotenv()
 
-ENVIAR_EMAIL = False   # Cambia a True cuando configures el email
+EMAIL_ORIGEN   = os.getenv('EMAIL_ORIGEN',   '')
+EMAIL_DESTINO  = os.getenv('EMAIL_DESTINO',  '')
+EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD', '')
+
+# Cambia a False si no quieres recibir email
+ENVIAR_EMAIL = all([EMAIL_ORIGEN, EMAIL_DESTINO, EMAIL_PASSWORD])
 
 # ============================================================
-#  PARÁMETROS (mismos que script 03 y 04)
+#  PARÁMETROS
 # ============================================================
 
 VOLUMEN_BASE_TIENDA = {
@@ -92,11 +96,11 @@ NOMBRES_TIENDA = {
 # ============================================================
 
 def get_multiplicador_dia(fecha_str, fecha_obj):
-    mes       = fecha_obj.month
-    dia       = fecha_obj.day
-    es_finde  = fecha_obj.weekday() >= 5
-    es_feriado= fecha_str in FERIADOS_PANAMA
-    temporada = TEMPORADAS[mes]
+    mes        = fecha_obj.month
+    dia        = fecha_obj.day
+    es_finde   = fecha_obj.weekday() >= 5
+    es_feriado = fecha_str in FERIADOS_PANAMA
+    temporada  = TEMPORADAS[mes]
 
     if dia in (14, 15, 29, 30) and temporada == 'Normal':
         temporada = 'Quincena'
@@ -110,7 +114,6 @@ def get_multiplicador_dia(fecha_str, fecha_obj):
     return mult, temporada, es_finde, es_feriado
 
 def verificar_dia_ya_cargado(cursor, id_tiempo):
-    """Verifica si el día ya fue cargado para evitar duplicados."""
     cursor.execute(
         "SELECT COUNT(*) FROM fact.ventas WHERE id_tiempo = ?",
         id_tiempo
@@ -176,7 +179,6 @@ def cargar_ventas_hoy(conn, cursor, fecha_hoy, id_tiempo):
                 vol_base * rot * mult_dia * random.uniform(0.5, 1.5)
             ))
 
-            # Descuento ocasional
             descuento = 0.0
             if (es_finde or es_feriado) and random.random() < 0.15:
                 descuento = float(random.choice([5.0, 10.0, 15.0, 20.0]))
@@ -198,7 +200,7 @@ def cargar_ventas_hoy(conn, cursor, fecha_hoy, id_tiempo):
             ))
 
         resumen_tiendas[id_tienda] = {
-            'monto': round(monto_tienda, 2),
+            'monto'   : round(monto_tienda, 2),
             'unidades': uds_tienda
         }
 
@@ -217,12 +219,7 @@ def actualizar_inventario_hoy(conn, cursor, fecha_hoy, id_tiempo):
         conn
     )
 
-    # Stock final del día anterior por tienda/artículo
-    ayer_id = int(
-        (fecha_hoy.replace(day=fecha_hoy.day) -
-         __import__('datetime').timedelta(days=1)
-        ).strftime('%Y%m%d')
-    )
+    ayer_id = int((fecha_hoy - timedelta(days=1)).strftime('%Y%m%d'))
 
     df_stock_ayer = pd.read_sql(
         f"""SELECT id_tienda, id_articulo, stock_final
@@ -235,7 +232,6 @@ def actualizar_inventario_hoy(conn, cursor, fecha_hoy, id_tiempo):
         ['id_tienda', 'id_articulo']
     )['stock_final'].to_dict()
 
-    # Ventas de hoy
     df_ventas_hoy = pd.read_sql(
         f"""SELECT id_tienda, id_articulo, SUM(cantidad) as vendido
             FROM fact.ventas
@@ -255,19 +251,17 @@ def actualizar_inventario_hoy(conn, cursor, fecha_hoy, id_tiempo):
         ) VALUES (?,?,?,?,?,?,?,?)
     """
 
-    alertas  = []
-    batch    = []
+    alertas = []
+    batch   = []
 
     for id_tienda in IDS_TIENDA:
         for _, art in df_articulos.iterrows():
-            id_art  = int(art['id_articulo'])
-            id_cat  = int(art['id_categoria'])
-
+            id_art    = int(art['id_articulo'])
+            id_cat    = int(art['id_categoria'])
             stock_min = STOCK_MINIMO_CATEGORIA.get(id_cat, 25)
             stock_ini = int(stock_ayer_idx.get((id_tienda, id_art), stock_min * 3))
             vendido   = int(ventas_hoy_idx.get((id_tienda, id_art), 0))
 
-            # Reposición si stock bajo
             recibido = 0
             if stock_ini - vendido <= stock_min:
                 recibido = int(stock_min * random.uniform(3, 5))
@@ -276,10 +270,10 @@ def actualizar_inventario_hoy(conn, cursor, fecha_hoy, id_tiempo):
 
             if stock_fin <= stock_min:
                 alertas.append({
-                    'tienda'  : NOMBRES_TIENDA[id_tienda],
-                    'id_art'  : id_art,
-                    'stock'   : stock_fin,
-                    'minimo'  : stock_min
+                    'tienda': NOMBRES_TIENDA[id_tienda],
+                    'id_art': id_art,
+                    'stock' : stock_fin,
+                    'minimo': stock_min
                 })
 
             batch.append((
@@ -329,7 +323,7 @@ def generar_html_reporte(fecha_hoy, resumen_tiendas, alertas,
 
     filas_alertas = ""
     if alertas:
-        for a in alertas[:10]:  # máximo 10 alertas en el email
+        for a in alertas[:10]:
             filas_alertas += f"""
             <tr>
                 <td style="padding:6px;color:#cc0000;">{a['tienda']}</td>
@@ -366,7 +360,6 @@ def generar_html_reporte(fecha_hoy, resumen_tiendas, alertas,
             <p style="margin:5px 0 0;opacity:0.8;">{fecha_hoy.strftime('%A %d de %B, %Y')}</p>
             <p style="margin:5px 0 0;opacity:0.6;font-size:13px;">{contexto_str}</p>
         </div>
-
         <div style="padding:20px;background:#f9f9f9;">
             <div style="display:flex;gap:20px;margin-bottom:20px;">
                 <div style="background:white;padding:15px;border-radius:8px;
@@ -392,7 +385,6 @@ def generar_html_reporte(fecha_hoy, resumen_tiendas, alertas,
                     <div style="color:#666;font-size:13px;">Alertas de stock</div>
                 </div>
             </div>
-
             <h3 style="color:#1a1a2e;">🏪 Ventas por tienda</h3>
             <table style="width:100%;border-collapse:collapse;">
                 <tr style="background:#1a1a2e;color:white;">
@@ -402,9 +394,7 @@ def generar_html_reporte(fecha_hoy, resumen_tiendas, alertas,
                 </tr>
                 {filas_tiendas}
             </table>
-
             {alertas_section}
-
             <p style="margin-top:20px;color:#999;font-size:12px;">
                 Generado automáticamente por RetailPro Analytics Pipeline<br>
                 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
@@ -417,7 +407,7 @@ def generar_html_reporte(fecha_hoy, resumen_tiendas, alertas,
 def enviar_email(fecha_hoy, resumen_tiendas, alertas,
                  temporada, es_finde, es_feriado):
     if not ENVIAR_EMAIL:
-        print("  📧 Email desactivado. Cambia ENVIAR_EMAIL = True para activarlo.")
+        print("  📧 Email desactivado — configura .env para activarlo.")
         return
 
     try:
@@ -425,10 +415,13 @@ def enviar_email(fecha_hoy, resumen_tiendas, alertas,
             fecha_hoy, resumen_tiendas, alertas,
             temporada, es_finde, es_feriado
         )
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = f"RetailPro | Reporte {fecha_hoy.strftime('%d/%m/%Y')} — ${sum(v['monto'] for v in resumen_tiendas.values()):,.0f}"
-        msg['From']    = EMAIL_ORIGEN
-        msg['To']      = EMAIL_DESTINO
+        msg            = MIMEMultipart('alternative')
+        msg['Subject'] = (
+            f"RetailPro | Reporte {fecha_hoy.strftime('%d/%m/%Y')} — "
+            f"${sum(v['monto'] for v in resumen_tiendas.values()):,.0f}"
+        )
+        msg['From'] = EMAIL_ORIGEN
+        msg['To']   = EMAIL_DESTINO
         msg.attach(MIMEText(html, 'html'))
 
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
@@ -452,6 +445,7 @@ if __name__ == '__main__':
     print("=" * 55)
     print(f"  RetailPro — Daily Loader")
     print(f"  Fecha: {fecha_hoy.strftime('%A %d de %B, %Y')}")
+    print(f"  Email: {'✅ Activado' if ENVIAR_EMAIL else '⚠️  Configura .env'}")
     print("=" * 55)
 
     conn   = get_connection()
@@ -464,25 +458,23 @@ if __name__ == '__main__':
     )
     if cursor.fetchone()[0] == 0:
         print(f"\n❌ Error: {fecha_str} no existe en dim.tiempo.")
-        print("   Verifica que dim.tiempo cubre hasta {FECHA_FIN_PRED}.")
         conn.close()
         exit(1)
 
     # Verificar si ya fue cargado hoy
     if verificar_dia_ya_cargado(cursor, id_tiempo):
         print(f"\n⚠️  El día {fecha_str} ya fue cargado.")
-        print("   Si quieres recargar, ejecuta primero:")
+        print(f"   Para recargar ejecuta en SSMS:")
         print(f"   DELETE FROM fact.ventas WHERE id_tiempo = {id_tiempo}")
         print(f"   DELETE FROM fact.inventario WHERE id_tiempo = {id_tiempo}")
         conn.close()
         exit(0)
 
-    # 1. Cargar ventas del día
+    # 1. Cargar ventas
     print(f"\n[1/3] Cargando ventas de hoy ({fecha_str})...")
     resumen, temporada, es_finde, es_feriado = cargar_ventas_hoy(
         conn, cursor, fecha_hoy, id_tiempo
     )
-
     total_dia = sum(v['monto'] for v in resumen.values())
     print(f"       Total ventas: ${total_dia:,.2f}")
     for id_t, datos in resumen.items():
@@ -497,10 +489,7 @@ if __name__ == '__main__':
 
     # 3. Enviar reporte
     print(f"\n[3/3] Enviando reporte diario...")
-    enviar_email(
-        fecha_hoy, resumen, alertas,
-        temporada, es_finde, es_feriado
-    )
+    enviar_email(fecha_hoy, resumen, alertas, temporada, es_finde, es_feriado)
 
     print(f"\n{'='*55}")
     print(f"  ✅ Daily Loader completado: {fecha_str}")

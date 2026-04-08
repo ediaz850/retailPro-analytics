@@ -12,7 +12,7 @@ import pyodbc
 # --- Conexión a SQL Server -----------------------------------
 # Ajusta SERVER si tu instancia tiene un nombre distinto
 # Ejemplo: SERVER = 'DESKTOP-ABC123\\SQLEXPRESS'
-SERVER   = 'localhost'
+SERVER   = 'DESKTOP-V9EV2HE\SQLEXPRESS'
 DATABASE = 'retailpro_db'
 
 def get_connection():
