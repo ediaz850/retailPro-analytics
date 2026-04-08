@@ -11,7 +11,7 @@
 #  REQUISITOS:
 #  - Haber ejecutado dimtiempo → dimcatalogo → factsventas → factsinventario
 #  - Crear archivo .env en la carpeta python/ con tus credenciales
-#    (copiar .env.example como .env y llenar los valores)
+
 # ============================================================
 
 import os
